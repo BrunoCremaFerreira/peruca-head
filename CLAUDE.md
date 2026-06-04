@@ -106,6 +106,8 @@ These mirror `../peruca/CLAUDE.md` and apply here without exception:
 
 - **All code in English** — identifiers, comments, docstrings, commit messages,
   docs. (User-facing voice text is pt-BR; that is data/config, not code.)
+- **Always write all documentation, comments, and code in English** — without
+  exception. (User-facing voice text is pt-BR; that is data/config, not code.)
 - **TDD is mandatory** — see the dedicated section above.
 - **Never create a git commit automatically.** Commit only when the user explicitly
   asks.
@@ -125,38 +127,131 @@ These mirror `../peruca/CLAUDE.md` and apply here without exception:
 | Config | `pydantic-settings` + `.env` | API URL, IDs, model sizes, voice |
 | v1 trigger | key/Enter (push-to-talk) | wake word deferred to Phase 5 |
 
-## Proposed project layout
+## Project layout (Clean Architecture + DDD)
+
+The head is a thin, I/O-bound application: its value is **orchestrating four heavy
+external dependencies (audio, STT, TTS, HTTP) at low latency without coupling to any
+of them** — the business logic lives in `../peruca`. Clean Architecture here serves
+two concrete goals (not purity): (1) test the whole thing without hardware, models, or
+network — already a CLAUDE.md requirement; (2) swap implementations (Whisper → other
+STT, Piper → other TTS, push-to-talk → wake word) without touching orchestration.
+
+The layer vocabulary mirrors the sibling `../peruca` (`domain` / `application` /
+`infra` / `tests`) so navigating between both projects uses the same mental map.
 
 ```
 peruca-head/
-├── CLAUDE.md
-├── README.md
-├── pyproject.toml            # deps + `peruca-head` entrypoint
-├── .env.example              # PERUCA_API_URL, EXTERNAL_USER_ID, models, voice
-├── src/peruca_head/
-│   ├── __init__.py
-│   ├── main.py               # main loop + state machine
-│   ├── config.py             # pydantic settings
-│   ├── audio/
-│   │   ├── recorder.py       # capture + VAD
-│   │   └── player.py         # playback
-│   ├── stt.py                # faster-whisper wrapper
-│   ├── tts.py                # Piper wrapper
-│   ├── peruca_client.py      # HTTP client for /llm/chat
-│   └── state.py              # IDLE/LISTENING/THINKING/SPEAKING (+ feedback)
-└── tests/
-    ├── test_peruca_client.py
-    ├── test_state.py
-    └── ...                   # mocks for audio / STT / TTS
+├── CLAUDE.md · README.md
+├── pyproject.toml                    # deps + `peruca-head` entrypoint
+├── .env.example                      # PERUCA_API_URL, EXTERNAL_USER_ID, models, voice, VAD
+└── src/                              # the package root itself (mirrors ../peruca/src)
+    ├── domain/                        # core — imports NOTHING external
+    │   ├── models/                    #   value objects / entities of the voice domain
+    │   │   ├── audio_buffer.py            # VO: PCM samples + sample_rate + channels (immutable)
+    │   │   ├── transcript.py              # VO: recognised text (+ is_empty())
+    │   │   ├── reply.py                   # VO: textual reply from the brain
+    │   │   └── conversation.py            # Entity: ConversationSession (external_user_id, chat_id)
+    │   └── ports/                     #   interfaces (ABC/Protocol) = the contracts
+    │       ├── recorder.py                # Recorder
+    │       ├── player.py                  # Player
+    │       ├── transcriber.py             # Transcriber
+    │       ├── speaker.py                 # Speaker
+    │       └── brain_client.py            # BrainClient
+    ├── application/                   # use cases — depends only on domain
+    │   ├── use_cases/
+    │   │   └── voice_turn.py              # VoiceTurnUseCase: one turn (record→…→play)
+    │   └── voice_loop.py                  # VoiceLoop: state machine that repeats the turn
+    ├── infra/                         # adapters — the ONLY place that touches external libs
+    │   ├── audio/
+    │   │   ├── sounddevice_recorder.py       # SoundDeviceRecorder (Recorder + VAD)
+    │   │   └── sounddevice_player.py         # SoundDevicePlayer (Player)
+    │   ├── stt/
+    │   │   └── whisper_transcriber.py        # WhisperTranscriber (Transcriber)
+    │   ├── tts/
+    │   │   └── piper_speaker.py              # PiperSpeaker (Speaker)
+    │   └── brain/
+    │       └── http_peruca_client.py         # HttpPerucaClient (BrainClient)
+    ├── config.py                      # pydantic-settings: single source of config (.env)
+    ├── composition.py                 # composition root: builds and injects the adapters
+    ├── main.py                        # CLI entrypoint: read config → composition → run loop
+    └── tests/                         # mirrors the layers (tests live inside src/)
+        ├── conftest.py
+        ├── fakes/                     # fakes of the PORTS (reusable across tests)
+        │   ├── fake_recorder.py · fake_player.py
+        │   ├── fake_transcriber.py · fake_speaker.py
+        │   └── fake_brain_client.py
+        ├── unit_tests/
+        │   ├── domain/                # VOs/entity: immutability, equality, invariants
+        │   ├── application/           # use cases & voice_loop with ALL ports faked
+        │   └── infra/                 # each adapter with its OWN lib mocked (sd/whisper/piper/httpx)
+        └── integration_tests/         # contract with real peruca (opt-in, @pytest.mark.integration)
 ```
 
-### Component boundaries
-- `peruca_client.py` — only place that knows the HTTP shape of `/llm/chat`. Owns
-  ID handling (`external_user_id`, `chat_id`) and error/timeout handling.
-- `audio/recorder.py` / `audio/player.py` — only places that touch `sounddevice`.
-- `stt.py` / `tts.py` — only places that load the heavy models. Expose simple
-  `transcribe(pcm) -> str` / `synthesize(text) -> pcm` style functions.
-- `state.py` / `main.py` — orchestration only; no direct device or model access.
+### Ports and concrete adapters
+
+Each port speaks in **domain value objects**, never in library types (faster-whisper
+segments, `httpx.Response`, raw arrays). That is what keeps the contract stable when a
+library changes. Ports are granular per capability (Interface Segregation):
+
+| Port (`domain/ports/`) | Conceptual signature | Adapter (`infra/`) | Isolated lib |
+|---|---|---|---|
+| `Recorder` | `record_until_silence() -> AudioBuffer` | `SoundDeviceRecorder` | `sounddevice` + VAD |
+| `Transcriber` | `transcribe(AudioBuffer) -> Transcript` | `WhisperTranscriber` | `faster_whisper` |
+| `BrainClient` | `ask(message, ConversationSession) -> Reply` | `HttpPerucaClient` | `httpx` |
+| `Speaker` | `synthesize(text) -> AudioBuffer` | `PiperSpeaker` | `piper` |
+| `Player` | `play(AudioBuffer) -> None` | `SoundDevicePlayer` | `sounddevice` |
+
+`Recorder` and `Player` are separate ports even though both use `sounddevice` —
+capturing and playing are distinct responsibilities, mocked independently. The trigger
+(push-to-talk / wake word) is a Strategy: in Phase 3 it is just `main` waiting for
+Enter; a `Trigger` port + wake-word adapter only arrives in Phase 5 (YAGNI until then).
+
+### Dependency rule (who may import whom)
+
+Dependencies always point inward (Dependency Inversion):
+
+1. **`domain/` imports nothing** — not `application`, not `infra`, not external libs
+   (`sounddevice`, `faster_whisper`, `piper`, `httpx`). Innermost ring.
+2. **`application/` imports only `domain/`.** Never `infra`, never an external lib.
+   (Fitness check: `grep` for those imports under `application/` must return zero.)
+3. **`infra/` imports `domain/`** (to implement ports and return VOs) and the external
+   libs. Adapters never import one another.
+4. **Only the composition root (`composition.py`) knows the concrete adapters** and
+   instantiates them.
+
+**Why this protects latency:** the composition root loads Whisper and Piper **once** at
+startup and injects already-warm instances; since use cases see only ports, there is no
+way to instantiate a model per request on the critical path
+(record→stt→ask→tts→play). **Why it protects decoupling:** swapping STT/TTS or
+push-to-talk→wake word is one new adapter plus one line in the composition root; the
+Raspberry Pi port (Phase 6) is new audio adapters with the same orchestration.
+
+### Component mapping (old single-file plan → layered structure)
+
+| Concern | Lives in | Notes |
+|---|---|---|
+| HTTP shape of `/llm/chat`, ID handling, error/timeout | port `BrainClient` + `infra/brain/http_peruca_client.py` | HTTP shape never leaks out of infra |
+| audio capture + VAD | port `Recorder` + `infra/audio/sounddevice_recorder.py` | only place touching `sounddevice` (capture) |
+| audio playback | port `Player` + `infra/audio/sounddevice_player.py` | only place touching `sounddevice` (output) |
+| STT (heavy model) | port `Transcriber` + `infra/stt/whisper_transcriber.py` | only place loading Whisper |
+| TTS (heavy model) | port `Speaker` + `infra/tts/piper_speaker.py` | only place loading Piper |
+| state machine IDLE/LISTENING/THINKING/SPEAKING | `application/voice_loop.py` | orchestration only; no device/model access |
+| one turn of the loop | `application/use_cases/voice_turn.py` | testable unit; covers empty transcript, brain error/timeout |
+| wiring + entrypoint | `composition.py` + `main.py` | composition root separate from CLI entrypoint |
+
+### Pragmatic start (Phase 0)
+
+Clean Architecture is justified here because the mandatory "test without external
+dependencies" already forces ports + adapters + fakes — ~80% of the cost is paid
+regardless. The over-engineering risk lives only in *folder depth and domain richness*,
+so grow it **per phase**: for Phase 0 (text-only terminal chat) implement just the
+vertical slice that proves the brain integration — `domain/models/{reply,conversation}`,
+`domain/ports/brain_client.py`, `infra/brain/http_peruca_client.py`, a minimal
+text→text use case, `config.py`, `composition.py`, `main.py`, plus
+`tests/fakes/fake_brain_client.py` and unit tests. Do **not** create `audio/`, `stt/`,
+`tts/`, `AudioBuffer`, `Transcript`, or `VoiceLoop` yet — they land in Phases 1–3, each
+as a port+adapter pair, with no refactor of the foundation. Keep `AudioBuffer` a thin VO
+(no DSP in the domain).
 
 ## Build plan (phased; each phase is independently testable)
 
@@ -205,11 +300,12 @@ Always build in this order — each phase produces something you can run.
 pip install -e .
 
 # Run the voice loop (Phase 3+)
-peruca-head run            # or: python -m peruca_head.main
+peruca-head run            # or: python src/main.py
 
-# Tests (TDD — must stay green)
-python -m pytest tests/ -v
-python -m pytest tests/test_peruca_client.py -v
+# Tests (TDD — must stay green). Tests live inside src/ (src/tests/)
+python -m pytest src/tests/ -v
+python -m pytest src/tests/unit_tests/ -v                  # fast, no external deps
+python -m pytest src/tests/integration_tests/ -v -m integration   # needs a running peruca
 
 # Requires a running peruca for live use (not for unit tests):
 #   cd ../peruca && docker compose up   (API on http://localhost:8000)
