@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peruca-head"
+version = "0.0.0"
+description = "Voice device (the head) for the Peruca assistant: closes the voice loop around peruca's /llm/chat API."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    # Voice output (Phase 1). sounddevice needs the system PortAudio library
+    # (e.g. `apt install libportaudio2`); see README.
+    "piper-tts>=1.0",
+    "sounddevice>=0.4",
+    "numpy>=1.24",
+    # Voice input (Phase 2): local STT + voice-activity detection. silero-vad
+    # pulls in torch (heavy; reevaluated for the Raspberry Pi port).
+    "faster-whisper>=1.0",
+    "silero-vad>=5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "respx>=0.21",
+]
+
+[project.scripts]
+peruca-head = "main:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = ["main", "config", "composition"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["domain*", "application*", "infra*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src/tests"]
+markers = [
+    "integration: tests that require a running peruca instance (opt-in)",
+]

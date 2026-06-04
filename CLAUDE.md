@@ -281,7 +281,16 @@ Always build in this order — each phase produces something you can run.
   MAX98357A or USB), LED ring for feedback, `systemd` autostart. Tune the Whisper
   model size to the Pi's CPU (likely `base`/`small`, or move STT to a server).
 
-**Current status:** nothing implemented yet. The next step is **Phase 0**.
+**Current status:** **Phases 0, 1 and 2 done.** Phase 0 — text chat against
+peruca's `/llm/chat` (`httpx` mocked via `respx`, brain faked). Phase 1 — voice
+output: `AudioBuffer` VO, `Speaker`/`Player` ports, `PiperSpeaker` (Piper) and
+`SoundDevicePlayer` (sounddevice) adapters. Phase 2 — voice input: `Transcript`
+VO, `Recorder`/`Transcriber` ports, `SoundDeviceRecorder` (sounddevice + silero
+VAD, record-until-silence) and `WhisperTranscriber` (faster-whisper) adapters;
+`peruca-head listen` records a phrase and prints the pt-BR transcript
+(`cientista`-validated). All adapters lazy-load and mock their heavy libs, so
+every unit test runs with no network, model, or hardware. The next step is
+**Phase 3 (Full loop — push-to-talk)**, which composes Phases 0–2 into one turn.
 
 ## Risks / things to watch
 - **Whisper CPU latency** — start with `small`, measure before going bigger.

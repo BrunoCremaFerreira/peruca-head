@@ -7,9 +7,12 @@ already exists in the sibling project [`peruca`](../peruca), which exposes a RES
 (`POST /llm/chat`). The head's only job is to close the **voice loop** around that
 API — listen, transcribe, ask Peruca, speak the answer.
 
-> **Status:** early design stage. The architecture, conventions, and build plan are
-> defined (see [`CLAUDE.md`](CLAUDE.md)); implementation starts at **Phase 0**.
-> Commands marked _(planned)_ below describe the target layout, not what exists today.
+> **Status:** **Phases 0, 1 and 2 implemented.** Phase 0 — text chat against
+> `/llm/chat`. Phase 1 — voice output: replies spoken in pt-BR via Piper.
+> Phase 2 — voice input: `peruca-head listen` records a phrase (silero VAD,
+> record-until-silence) and prints the pt-BR transcript (faster-whisper). All
+> fully unit-tested with no network, model, or hardware. The full push-to-talk
+> loop is next (Phase 3). See [`CLAUDE.md`](CLAUDE.md) for the full build plan.
 
 ---
 
@@ -118,28 +121,29 @@ Consultation order for ML/audio features:
 
 ## Build plan
 
-Each phase is independently runnable. Current target: **Phase 0**.
+Each phase is independently runnable. Current target: **Phase 3**.
 
 | Phase | Goal | Done when |
 |---|---|---|
-| **0** | Skeleton + `peruca_client` | Text chat in the terminal (type → Peruca reply), no audio |
-| **1** | Voice output (TTS) | Typed text is spoken in pt-BR |
-| **2** | Voice input (capture + STT) | Spoken phrase → correct text in console |
+| **0 ✅** | Skeleton + brain client | Text chat in the terminal (type → Peruca reply), no audio |
+| **1 ✅** | Voice output (TTS) | Typed text is spoken in pt-BR |
+| **2 ✅** | Voice input (capture + STT) | Spoken phrase → correct text in console |
 | **3** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
 | **4** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **5** | Wake word (optional) | Say "peruca…" and it starts listening on its own |
 | **6** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
 
-## Getting started _(planned)_
-
-> These steps describe the target setup once Phase 0 lands.
+## Getting started
 
 **Prerequisites**
 
 - Python 3.11+
 - A running Peruca instance reachable on `http://localhost:8000`
   (`cd ../peruca && docker compose up`)
-- PortAudio (for `sounddevice`) — e.g. `sudo apt install libportaudio2`
+- PortAudio (for `sounddevice`, needed to play audio) —
+  e.g. `sudo apt install libportaudio2`. Not required to run the tests.
+- For voice output: a pt-BR Piper voice on disk (the `.onnx` plus its
+  `.onnx.json`), e.g. `pt_BR-faber-medium`.
 
 **Install**
 
@@ -151,14 +155,31 @@ cp .env.example .env      # then edit PERUCA_API_URL, EXTERNAL_USER_ID, etc.
 **Run**
 
 ```bash
-peruca-head run           # or: python -m peruca_head.main
+peruca-head               # text chat; type a message, get Peruca's reply
 ```
 
-**Test**
+To also hear replies spoken (Phase 1), set in `.env`:
+
+```ini
+TTS_ENABLED=true
+PIPER_VOICE_PATH=/path/to/pt_BR-faber-medium.onnx
+```
+
+To try voice input (Phase 2) — record a phrase and see the transcript:
 
 ```bash
-python -m pytest tests/ -v
-python -m pytest tests/test_peruca_client.py -v
+peruca-head listen        # speak; Ctrl-C to stop
+```
+
+The first run downloads the faster-whisper model named by `WHISPER_MODEL_SIZE`
+(`small` by default). silero-vad pulls in PyTorch.
+
+**Test** — fast, no network/model/hardware:
+
+```bash
+python -m pytest src/tests/ -v
+python -m pytest src/tests/unit_tests/ -v
+python -m pytest src/tests/integration_tests/ -v -m integration   # needs a live Peruca
 ```
 
 ## Configuration _(planned)_
