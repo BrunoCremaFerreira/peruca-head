@@ -61,27 +61,50 @@ GET  /health → { "status": "ok" }
 - The head generates and persists both IDs locally. For now the device is
   single-user with a fixed `external_user_id`.
 
-## Architecture (Ports & Adapters)
+## Architecture (Clean Architecture + Ports & Adapters)
 
-The orchestration depends only on **abstractions (ports)**; each **adapter** is the
-single place allowed to touch one external dependency.
+Dependencies point **inward**: `domain` imports nothing, `application` imports only
+`domain`, and `infra` (the adapters) is the single place allowed to touch each
+external library. The composition root is the only module that knows the concrete
+adapters and wires them together.
 
 ```
-src/peruca_head/
-├── main.py            ← composition root + loop orchestration
-├── config.py          ← settings (pydantic-settings); single source of config
-├── state.py           ← state machine: IDLE / LISTENING / THINKING / SPEAKING
-├── ports.py           ← abstractions: Recorder, Transcriber, Speaker, BrainClient
-├── peruca_client.py   ← HTTP adapter for /llm/chat (sole owner of the API contract)
-├── stt.py             ← STT adapter (faster-whisper)
-├── tts.py             ← TTS adapter (Piper)
-└── audio/
-    ├── recorder.py    ← capture + VAD adapter (sounddevice)
-    └── player.py      ← playback adapter (sounddevice)
+src/
+├── main.py                       ← CLI entrypoint: run / loop / listen / chat
+├── composition.py                ← composition root: builds & injects the adapters
+├── config.py                     ← settings (pydantic-settings); single source of config
+├── domain/                       ← core — imports nothing external
+│   ├── models/                   ←   value objects & entities
+│   │   ├── audio_buffer.py · transcript.py · reply.py
+│   │   ├── conversation.py · turn_outcome.py · voice_state.py
+│   └── ports/                    ←   the contracts (ABC/Protocol)
+│       ├── recorder.py · transcriber.py · speaker.py · player.py
+│       ├── brain_client.py · brain_health.py · trigger.py
+├── application/                  ← use cases — depends only on domain
+│   ├── use_cases/
+│   │   ├── text_turn.py · listen.py · speak_text.py
+│   │   ├── voice_turn.py · check_brain_health.py
+│   └── voice_loop.py             ←   state machine IDLE/LISTENING/THINKING/SPEAKING
+├── infra/                        ← adapters — the ONLY place that touches external libs
+│   ├── audio/
+│   │   ├── sounddevice_recorder.py   ← capture + VAD (sounddevice + silero)
+│   │   ├── sounddevice_player.py     ← playback (sounddevice)
+│   │   └── cue_factory.py            ← start-cue beep generator
+│   ├── stt/whisper_transcriber.py    ← faster-whisper
+│   ├── tts/piper_speaker.py          ← Piper
+│   ├── brain/http_peruca_client.py   ← httpx adapter for /llm/chat
+│   └── trigger/
+│       ├── enter_trigger.py          ← push-to-talk (Enter)
+│       └── wakeword_trigger.py       ← openWakeWord (optional, lazy-loaded)
+└── tests/                        ← mirrors the layers (fakes/ unit_tests/ integration_tests/)
 ```
 
-- Only `audio/` imports `sounddevice`; only `stt.py` loads Whisper; only `tts.py`
-  loads the Piper voice; only `peruca_client.py` knows the HTTP shape of `/llm/chat`.
+- Only `infra/audio/` imports `sounddevice`; only `infra/stt/` loads Whisper; only
+  `infra/tts/` loads the Piper voice; only `infra/brain/` knows the HTTP shape of
+  `/llm/chat`. Adapters never import one another.
+- The composition root loads Whisper and Piper **once** at startup and injects
+  already-warm instances, keeping the heavy models off the per-turn critical path
+  (record → STT → ask → TTS → play).
 - `config.py` is the single source of configuration — no hardcoded URLs, IDs, model
   sizes, voices, or VAD thresholds anywhere else.
 
@@ -123,7 +146,8 @@ Consultation order for ML/audio features:
 
 ## Build plan
 
-Each phase is independently runnable. Current target: **Phase 5**.
+Each phase is independently runnable. **Phases 0–5 are done**; only the Raspberry Pi
+port (Phase 6) remains, and is out of current scope.
 
 | Phase | Goal | Done when |
 |---|---|---|
@@ -133,9 +157,7 @@ Each phase is independently runnable. Current target: **Phase 5**.
 | **3 ✅** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
 | **4 ✅** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **5 ✅** | Wake word (optional) | Pluggable trigger; openWakeWord when a model is supplied |
-| **4** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
-| **5** | Wake word (optional) | Say "peruca…" and it starts listening on its own |
-| **6** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
+| **6 ⬜** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
 
 ## Getting started
 
@@ -204,22 +226,44 @@ python -m pytest src/tests/unit_tests/ -v
 python -m pytest src/tests/integration_tests/ -v -m integration   # needs a live Peruca
 ```
 
-## Configuration _(planned)_
+## Configuration
 
-All configuration lives in `.env` (loaded via `config.py`). Expected keys:
+All configuration lives in `.env` (loaded via `config.py`); copy
+[`.env.example`](.env.example) and edit. The main keys:
 
 ```ini
+# Brain API & identity
 PERUCA_API_URL=http://localhost:8000
-EXTERNAL_USER_ID=dev            # stable per device; keys Peruca's per-user memory
-CHAT_ID=                        # optional; generated/persisted if empty
+EXTERNAL_USER_ID=peruca-head-device   # stable per device; keys Peruca's per-user memory
+CHAT_ID=peruca-head-session           # conversation thread id
+REQUEST_TIMEOUT_SECONDS=30
 
-STT_MODEL=small                 # faster-whisper model size
+# Voice output (TTS, Phase 1) — disabled by default so text chat needs no voice on disk
+TTS_ENABLED=false
+PIPER_VOICE_PATH=                     # path to the pt-BR Piper .onnx (its .onnx.json beside it)
+PIPER_LENGTH_SCALE=1.0                # > 1.0 slows speech, < 1.0 speeds it up
+
+# Voice input (STT + VAD, Phase 2)
+WHISPER_MODEL_SIZE=small              # faster-whisper model, downloaded on first use
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
 STT_LANGUAGE=pt
+VAD_MIN_SILENCE_MS=800                # silence that ends a recording
+VAD_MAX_RECORDING_MS=15000
 
-TTS_VOICE=pt_BR-faber-medium    # Piper voice
+# Robustness & feedback (Phase 4)
+LOG_LEVEL=INFO
+AUDIO_CUES_ENABLED=true               # short "you can speak" beep before recording
+HEALTH_CHECK_ENABLED=true             # /health probe on startup (warn & continue if down)
 
-VAD_SILENCE_MS=800              # silence that ends a recording
+# Trigger / wake word (Phase 5, optional)
+TRIGGER_TYPE=enter                    # "enter" = push-to-talk; "wake_word" = always-on
+WAKE_WORD_MODEL_PATH=                 # required when TRIGGER_TYPE=wake_word
+WAKE_WORD_THRESHOLD=0.5
 ```
+
+See [`.env.example`](.env.example) for the complete list (VAD frame/threshold
+tuning, cue frequency/volume, beam size, capture rate, refractory window, …).
 
 ## Relationship to Peruca
 
