@@ -281,17 +281,19 @@ Always build in this order — each phase produces something you can run.
   MAX98357A or USB), LED ring for feedback, `systemd` autostart. Tune the Whisper
   model size to the Pi's CPU (likely `base`/`small`, or move STT to a server).
 
-**Current status:** **Phases 0–3 done.** Phase 0 — text chat against peruca's
+**Current status:** **Phases 0–4 done.** Phase 0 — text chat against peruca's
 `/llm/chat`. Phase 1 — voice output (`PiperSpeaker` + `SoundDevicePlayer`).
 Phase 2 — voice input (`SoundDeviceRecorder` with silero VAD +
-`WhisperTranscriber`); `peruca-head listen`. Phase 3 — full push-to-talk loop:
-`VoiceTurnUseCase` (composes Listen→TextTurn→SpeakText, returns `TurnOutcome`,
-speaks a pt-BR error on brain failure without propagating) and `VoiceLoop`
-(`IDLE/LISTENING/THINKING/SPEAKING` state machine, injected trigger/state/timing,
-structural anti-echo); `peruca-head loop` runs an end-to-end voice conversation
-(`cientista`+`arquiteto`-validated). All adapters lazy-load and mock their heavy
-libs, so every unit test runs with no network, model, or hardware. The next step
-is **Phase 4 (Robustness & config)**.
+`WhisperTranscriber`). Phase 3 — full push-to-talk loop (`VoiceTurnUseCase` +
+`VoiceLoop`, `TurnOutcome`/`VoiceState`, spoken pt-BR error, structural
+anti-echo). Phase 4 — robustness & config for daily use: start cue (generated
+880 Hz beep via `cue_factory`, played before capture with a 100 ms anti-leak
+gap in the recorder), `BrainHealthCheck` port + `/health` startup probe
+(warn-and-continue), logging via the existing callbacks, full `.env` coverage,
+and a `peruca-head run` command (default; `loop` alias, `listen`/`chat`
+diagnostics) — `cientista`+`arquiteto`-validated. All adapters lazy-load and
+mock their heavy libs, so every unit test runs with no network, model, or
+hardware. The next step is **Phase 5 (Wake word, optional)**.
 
 ## Risks / things to watch
 - **Whisper CPU latency** — start with `small`, measure before going bigger.

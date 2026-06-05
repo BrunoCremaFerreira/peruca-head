@@ -7,13 +7,14 @@ already exists in the sibling project [`peruca`](../peruca), which exposes a RES
 (`POST /llm/chat`). The head's only job is to close the **voice loop** around that
 API — listen, transcribe, ask Peruca, speak the answer.
 
-> **Status:** **Phases 0–3 implemented.** Phase 0 — text chat against
+> **Status:** **Phases 0–4 implemented.** Phase 0 — text chat against
 > `/llm/chat`. Phase 1 — voice output (Piper). Phase 2 — voice input
 > (`peruca-head listen`: silero VAD + faster-whisper). Phase 3 — full
-> push-to-talk loop (`peruca-head loop`): Enter → record → STT → peruca → TTS →
-> speak → repeat, with console state/timing feedback and spoken pt-BR error
-> handling. All fully unit-tested with no network, model, or hardware.
-> Robustness & config polish is next (Phase 4). See [`CLAUDE.md`](CLAUDE.md).
+> push-to-talk loop. Phase 4 — robustness & config for daily use:
+> `peruca-head run` (default command), a start-cue beep, `/health` check on
+> startup (warn-and-continue), logging, and full `.env` coverage. All fully
+> unit-tested with no network, model, or hardware. Wake word is next
+> (Phase 5, optional). See [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -122,7 +123,7 @@ Consultation order for ML/audio features:
 
 ## Build plan
 
-Each phase is independently runnable. Current target: **Phase 4**.
+Each phase is independently runnable. Current target: **Phase 5**.
 
 | Phase | Goal | Done when |
 |---|---|---|
@@ -130,6 +131,7 @@ Each phase is independently runnable. Current target: **Phase 4**.
 | **1 ✅** | Voice output (TTS) | Typed text is spoken in pt-BR |
 | **2 ✅** | Voice input (capture + STT) | Spoken phrase → correct text in console |
 | **3 ✅** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
+| **4 ✅** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **4** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **5** | Wake word (optional) | Say "peruca…" and it starts listening on its own |
 | **6** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
@@ -156,7 +158,8 @@ cp .env.example .env      # then edit PERUCA_API_URL, EXTERNAL_USER_ID, etc.
 **Run**
 
 ```bash
-peruca-head               # text chat; type a message, get Peruca's reply
+peruca-head               # the voice head (= `run`); needs TTS configured
+peruca-head chat          # text-only chat; type a message, get Peruca's reply
 ```
 
 To also hear replies spoken (Phase 1), set in `.env`:
@@ -175,12 +178,17 @@ peruca-head listen        # speak; Ctrl-C to stop
 The first run downloads the faster-whisper model named by `WHISPER_MODEL_SIZE`
 (`small` by default). silero-vad pulls in PyTorch.
 
-To run the full voice conversation (Phase 3) — needs TTS configured (the loop and
-its error messages are spoken):
+To run the full voice conversation (Phases 3–4) — needs TTS configured (the loop
+and its error messages are spoken):
 
 ```bash
-peruca-head loop          # Enter → speak → hear the reply → repeat; Ctrl-C to stop
+peruca-head run           # Enter → beep → speak → hear the reply → repeat; Ctrl-C to stop
 ```
+
+A short beep means "you can speak" — **speak after the beep** (audio captured
+during the cue is not recorded). On startup the head probes the brain's
+`/health`; if it's down it warns and starts anyway (the first turn will speak the
+error). Set `AUDIO_CUES_ENABLED=false` to silence the beep.
 
 **Test** — fast, no network/model/hardware:
 

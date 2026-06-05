@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     # signals the failure instead of going silent.
     error_speech_pt_br: str = "Não consegui falar com o cérebro agora."
 
+    # --- Robustness & feedback (Phase 4) ---
+    log_level: str = "INFO"
+    # Start cue: a short beep meaning "you can speak", played before capture.
+    audio_cues_enabled: bool = True
+    start_cue_freq_hz: float = 880.0
+    start_cue_volume: float = 0.3  # fraction of full scale (headroom vs saturation)
+    # /health probe at startup (warn-and-continue). Short, dedicated timeout so a
+    # down brain never hangs the boot.
+    health_check_enabled: bool = True
+    health_check_timeout_seconds: float = 2.0
+
     # Voice output (TTS). Disabled by default so the text chat runs without a
     # Piper voice on disk; enable once the .onnx voice is in place.
     tts_enabled: bool = False

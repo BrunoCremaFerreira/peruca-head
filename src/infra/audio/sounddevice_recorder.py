@@ -24,11 +24,16 @@ from typing import Any, Callable, Iterable, Optional
 
 import numpy as np
 
+import time
+
 from domain.models.audio_buffer import AudioBuffer
 from domain.ports.recorder import Recorder
 
 _SILERO_FRAME_SIZE = 512  # silero-vad accepts only 512 samples at 16 kHz
 _INT16_FULL_SCALE = 32768.0
+# Silence waited before opening the input stream, so the start cue's acoustic
+# tail/reverb has died before capture begins (anti-leak). Not configurable.
+_PRE_CAPTURE_GAP_MS = 100
 
 
 class SoundDeviceRecorder(Recorder):
@@ -39,6 +44,7 @@ class SoundDeviceRecorder(Recorder):
         *,
         vad: Optional[Callable[[np.ndarray], float]] = None,
         frame_source_factory: Optional[Callable[[], Iterable[np.ndarray]]] = None,
+        sleep: Optional[Callable[[float], None]] = None,
         sample_rate: int = 16000,
         channels: int = 1,
         frame_size: int = _SILERO_FRAME_SIZE,
@@ -50,6 +56,7 @@ class SoundDeviceRecorder(Recorder):
     ) -> None:
         self._vad = vad
         self._frame_source_factory = frame_source_factory
+        self._sleep = sleep or time.sleep
         self._sample_rate = sample_rate
         self._channels = channels
         self._frame_size = frame_size
@@ -63,6 +70,8 @@ class SoundDeviceRecorder(Recorder):
 
     def record_until_silence(self) -> AudioBuffer:
         vad = self._loaded_vad()
+        # Let the start cue's acoustic tail die before the input stream opens.
+        self._sleep(_PRE_CAPTURE_GAP_MS / 1000.0)
         # Keep enough recent frames to recover the onset (pre-roll padding plus
         # the speech-confirmation window) when speech is finally confirmed.
         pre_roll = deque(maxlen=self._pre_roll_frames + self._min_speech_frames)

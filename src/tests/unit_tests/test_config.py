@@ -33,3 +33,15 @@ def test_request_timeout_default_is_voice_friendly():
 def test_has_a_ptbr_brain_error_phrase():
     phrase = Settings(_env_file=None).error_speech_pt_br
     assert isinstance(phrase, str) and phrase.strip() != ""
+
+
+def test_phase4_knobs_have_daily_use_defaults():
+    settings = Settings(_env_file=None)
+    assert settings.log_level == "INFO"
+    assert settings.audio_cues_enabled is True
+    assert settings.start_cue_freq_hz == 880.0
+    assert settings.start_cue_volume == 0.3
+    assert settings.health_check_enabled is True
+    # Dedicated short timeout, distinct from the 10s per-turn request timeout.
+    assert settings.health_check_timeout_seconds == 2.0
+    assert settings.health_check_timeout_seconds < settings.request_timeout_seconds

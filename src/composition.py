@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from application.use_cases.check_brain_health import CheckBrainHealthUseCase
 from application.use_cases.listen import ListenUseCase
 from application.use_cases.speak_text import SpeakTextUseCase
 from application.use_cases.text_turn import TextTurnUseCase
@@ -17,11 +18,21 @@ from application.voice_loop import VoiceLoop
 from config import Settings
 from domain.models.conversation import ConversationSession
 from domain.models.voice_state import VoiceState
+from infra.audio.cue_factory import build_start_cue
 from infra.audio.sounddevice_player import SoundDevicePlayer
 from infra.audio.sounddevice_recorder import SoundDeviceRecorder
 from infra.brain.http_peruca_client import HttpPerucaClient
 from infra.stt.whisper_transcriber import WhisperTranscriber
 from infra.tts.piper_speaker import PiperSpeaker
+
+
+def build_check_brain_health(settings: Settings) -> CheckBrainHealthUseCase:
+    """Wire the startup health probe (short, dedicated timeout)."""
+    health_client = HttpPerucaClient(
+        base_url=settings.peruca_api_url,
+        health_timeout_seconds=settings.health_check_timeout_seconds,
+    )
+    return CheckBrainHealthUseCase(health_client)
 
 
 def build_text_turn_use_case(settings: Settings) -> TextTurnUseCase:
@@ -92,6 +103,18 @@ def build_voice_loop(
     same ``on_state`` callback (the turn emits LISTENING/THINKING/SPEAKING; the
     loop emits IDLE). The I/O callables come from ``main``.
     """
+    start_cue = None
+    play_cue = None
+    if settings.audio_cues_enabled:
+        start_cue = build_start_cue(
+            sample_rate=settings.capture_sample_rate,
+            freq_hz=settings.start_cue_freq_hz,
+            amplitude=settings.start_cue_volume,
+        )
+        # A dedicated player for the cue; play() opens/closes its stream per call,
+        # so it never overlaps the speaker or the recorder (sequential loop).
+        play_cue = SoundDevicePlayer().play
+
     turn = VoiceTurnUseCase(
         listen=build_listen_use_case(settings),
         text_turn=build_text_turn_use_case(settings),
@@ -99,6 +122,8 @@ def build_voice_loop(
         error_phrase=settings.error_speech_pt_br,
         on_state=on_state,
         on_timing=on_timing,
+        start_cue=start_cue,
+        play_cue=play_cue,
     )
     return VoiceLoop(
         turn,

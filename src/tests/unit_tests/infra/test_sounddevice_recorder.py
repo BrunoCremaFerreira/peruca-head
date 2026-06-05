@@ -39,6 +39,7 @@ def _recorder(frames, probs, **overrides):
     params = dict(
         vad=_ScriptedVad(probs),
         frame_source_factory=lambda: iter(frames),
+        sleep=lambda _seconds: None,  # no real anti-leak gap delay in tests
         sample_rate=16000,
         channels=1,
         frame_size=FRAME_SIZE,
@@ -50,6 +51,20 @@ def _recorder(frames, probs, **overrides):
     )
     params.update(overrides)
     return SoundDeviceRecorder(**params)
+
+
+def test_waits_the_anti_leak_gap_before_capturing():
+    # The cue's acoustic tail must die before capture opens: a fixed pre-capture
+    # gap is slept before the first frame is read.
+    slept: list = []
+    frames = [_frame(1), _frame(2)]
+    recorder = _recorder(
+        frames, probs=[0.0, 0.0], sleep=lambda seconds: slept.append(seconds)
+    )
+
+    recorder.record_until_silence()
+
+    assert slept and slept[0] >= 0.1  # >= 100 ms before any capture
 
 
 def test_records_speech_and_stops_after_sustained_silence():

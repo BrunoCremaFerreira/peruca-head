@@ -22,6 +22,7 @@ from typing import Callable, Optional
 from application.use_cases.listen import ListenUseCase
 from application.use_cases.speak_text import SpeakTextUseCase
 from application.use_cases.text_turn import TextTurnUseCase
+from domain.models.audio_buffer import AudioBuffer
 from domain.models.turn_outcome import TurnOutcome
 from domain.models.voice_state import VoiceState
 from domain.ports.brain_client import BrainUnavailableError
@@ -40,6 +41,8 @@ class VoiceTurnUseCase:
         on_state: Optional[Callable[[VoiceState], None]] = None,
         on_timing: Optional[Callable[[str, float], None]] = None,
         clock: Optional[Callable[[], float]] = None,
+        start_cue: Optional[AudioBuffer] = None,
+        play_cue: Optional[Callable[[AudioBuffer], None]] = None,
     ) -> None:
         self._listen = listen
         self._text_turn = text_turn
@@ -48,9 +51,14 @@ class VoiceTurnUseCase:
         self._on_state = on_state or (lambda state: None)
         self._on_timing = on_timing or (lambda label, seconds: None)
         self._clock = clock or time.perf_counter
+        self._start_cue = start_cue
+        self._play_cue = play_cue
 
     def run(self) -> TurnOutcome:
         self._on_state(VoiceState.LISTENING)
+        # Signal "you can speak" before capture opens, so the cue can't leak in.
+        if self._start_cue is not None and self._play_cue is not None:
+            self._play_cue(self._start_cue)
         transcript = self._timed("listen", self._listen.run)
         if transcript.is_empty():
             return TurnOutcome.EMPTY

@@ -18,16 +18,29 @@ import httpx
 from domain.models.conversation import ConversationSession
 from domain.models.reply import Reply
 from domain.ports.brain_client import BrainClient, BrainUnavailableError
+from domain.ports.brain_health import BrainHealthCheck
 
 _CHAT_PATH = "/llm/chat"
+_HEALTH_PATH = "/health"
 
 
-class HttpPerucaClient(BrainClient):
-    """Talks to the peruca brain over HTTP."""
+class HttpPerucaClient(BrainClient, BrainHealthCheck):
+    """Talks to the peruca brain over HTTP.
 
-    def __init__(self, base_url: str, timeout_seconds: float = 30.0) -> None:
+    Implements both the per-turn ``BrainClient`` (POST /llm/chat) and the startup
+    ``BrainHealthCheck`` (GET /health) — same service, same base URL — while each
+    use case depends only on the port it needs.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 30.0,
+        health_timeout_seconds: float = 2.0,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._health_timeout_seconds = health_timeout_seconds
 
     def ask(self, message: str, session: ConversationSession) -> Reply:
         payload = {
@@ -49,3 +62,15 @@ class HttpPerucaClient(BrainClient):
             ) from exc
 
         return Reply(text=data.get("response", ""))
+
+    def check_health(self) -> bool:
+        """Probe GET /health with a short timeout; never raises."""
+        try:
+            response = httpx.get(
+                f"{self._base_url}{_HEALTH_PATH}",
+                timeout=self._health_timeout_seconds,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return False
+        return True

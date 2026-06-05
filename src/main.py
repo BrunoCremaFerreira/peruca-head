@@ -1,17 +1,20 @@
-"""CLI entrypoint: a text chat in the terminal against the peruca brain.
+"""CLI entrypoint for the peruca voice head.
 
-Phase 0 deliverable: type a message, see peruca's reply. No audio yet. Run with
-the ``peruca-head`` console script or ``python src/main.py``.
+Commands: ``peruca-head run`` (the daily voice loop; default), ``loop`` (alias),
+``listen`` (STT diagnostic), ``chat`` (text-only diagnostic). Run with the
+``peruca-head`` console script or ``python src/main.py [command]``.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from application.use_cases.listen import ListenUseCase
 from application.use_cases.speak_text import SpeakTextUseCase
 from application.use_cases.text_turn import TextTurnUseCase
 from composition import (
+    build_check_brain_health,
     build_listen_use_case,
     build_speak_text_use_case,
     build_text_turn_use_case,
@@ -22,6 +25,16 @@ from domain.models.voice_state import VoiceState
 from domain.ports.brain_client import BrainUnavailableError
 
 _EXIT_COMMANDS = {"exit", "quit", "sair"}
+_KNOWN_COMMANDS = {"run", "loop", "listen", "chat"}
+
+logger = logging.getLogger("peruca_head")
+
+
+def select_mode(argv: list[str]) -> str:
+    """Resolve the CLI mode from args. Bare/unknown -> 'run' (the product)."""
+    if argv and argv[0] in _KNOWN_COMMANDS:
+        return argv[0]
+    return "run"
 
 
 def run_chat(
@@ -92,11 +105,21 @@ def run_loop(settings: Settings, *, input_fn=input, output_fn=print) -> None:
         )
         return
 
+    # Startup liveness probe: warn but continue (a turn later speaks the error).
+    if settings.health_check_enabled:
+        if build_check_brain_health(settings).run():
+            logger.info("brain healthy at %s", settings.peruca_api_url)
+        else:
+            logger.warning(
+                "brain unreachable at %s; starting anyway (will retry each turn)",
+                settings.peruca_api_url,
+            )
+
     def on_state(state: VoiceState) -> None:
-        output_fn(f"[{state.name.lower()}]")
+        logger.info("state: %s", state.name.lower())
 
     def on_timing(label: str, seconds: float) -> None:
-        output_fn(f"  · {label}: {seconds:.2f}s")
+        logger.info("timing %s: %.2fs", label, seconds)
 
     loop = build_voice_loop(
         settings,
@@ -112,18 +135,27 @@ def run_loop(settings: Settings, *, input_fn=input, output_fn=print) -> None:
         output_fn("\nbye")
 
 
-def main() -> None:
-    settings = Settings()
-    mode = sys.argv[1:2]
-    if mode == ["listen"]:
-        run_listen(build_listen_use_case(settings))
-        return
-    if mode == ["loop"]:
-        run_loop(settings)
-        return
+def run_text_chat(settings: Settings) -> None:
+    """Text-only diagnostic chat (optionally speaking replies if TTS is on)."""
     text_turn = build_text_turn_use_case(settings)
     speak = build_speak_text_use_case(settings) if settings.tts_enabled else None
     run_chat(text_turn, speak_use_case=speak)
+
+
+def main() -> None:
+    settings = Settings()
+    logging.basicConfig(
+        level=settings.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+
+    commands = {
+        "run": run_loop,
+        "loop": run_loop,
+        "listen": lambda s: run_listen(build_listen_use_case(s)),
+        "chat": run_text_chat,
+    }
+    commands[select_mode(sys.argv[1:])](settings)
 
 
 if __name__ == "__main__":

@@ -78,3 +78,37 @@ def test_connection_error_raises_brain_unavailable(session):
 
     with pytest.raises(BrainUnavailableError):
         client.ask("oi", session)
+
+
+@respx.mock
+def test_check_health_true_when_brain_reports_ok():
+    respx.get(f"{BASE_URL}/health").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    client = HttpPerucaClient(base_url=BASE_URL)
+
+    assert client.check_health() is True
+
+
+@respx.mock
+def test_check_health_false_on_error_status():
+    respx.get(f"{BASE_URL}/health").mock(return_value=httpx.Response(503))
+    client = HttpPerucaClient(base_url=BASE_URL)
+
+    assert client.check_health() is False
+
+
+@respx.mock
+def test_check_health_false_on_connection_error():
+    respx.get(f"{BASE_URL}/health").mock(side_effect=httpx.ConnectError("down"))
+    client = HttpPerucaClient(base_url=BASE_URL)
+
+    assert client.check_health() is False
+
+
+@respx.mock
+def test_check_health_false_on_timeout():
+    respx.get(f"{BASE_URL}/health").mock(side_effect=httpx.TimeoutException("slow"))
+    client = HttpPerucaClient(base_url=BASE_URL)
+
+    assert client.check_health() is False
