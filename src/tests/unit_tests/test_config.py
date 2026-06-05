@@ -45,3 +45,29 @@ def test_phase4_knobs_have_daily_use_defaults():
     # Dedicated short timeout, distinct from the 10s per-turn request timeout.
     assert settings.health_check_timeout_seconds == 2.0
     assert settings.health_check_timeout_seconds < settings.request_timeout_seconds
+
+
+def test_trigger_defaults_to_push_to_talk():
+    settings = Settings(_env_file=None)
+    assert settings.trigger_type == "enter"
+    assert settings.wake_word_frame_size == 1280  # not the silero 512
+    assert settings.wake_word_threshold == 0.5
+    assert settings.vad_pre_capture_gap_enter_ms == 100
+    assert settings.vad_pre_capture_gap_wakeword_ms == 40
+
+
+def test_wake_word_requires_a_model_path():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, trigger_type="wake_word", wake_word_model_path="")
+
+
+def test_wake_word_with_model_path_is_valid():
+    settings = Settings(
+        _env_file=None, trigger_type="wake_word", wake_word_model_path="/m/peruca.onnx"
+    )
+    assert settings.trigger_type == "wake_word"
+
+
+def test_rejects_unknown_trigger_type():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, trigger_type="telepathy")

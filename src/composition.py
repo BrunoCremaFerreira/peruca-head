@@ -18,11 +18,14 @@ from application.voice_loop import VoiceLoop
 from config import Settings
 from domain.models.conversation import ConversationSession
 from domain.models.voice_state import VoiceState
+from domain.ports.trigger import Trigger
 from infra.audio.cue_factory import build_start_cue
 from infra.audio.sounddevice_player import SoundDevicePlayer
 from infra.audio.sounddevice_recorder import SoundDeviceRecorder
 from infra.brain.http_peruca_client import HttpPerucaClient
 from infra.stt.whisper_transcriber import WhisperTranscriber
+from infra.trigger.enter_trigger import EnterTrigger
+from infra.trigger.wakeword_trigger import WakeWordTrigger
 from infra.tts.piper_speaker import PiperSpeaker
 
 
@@ -68,6 +71,14 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
 
     Loads the Whisper model once (warm) at startup, off the per-turn path.
     """
+    # The pre-capture gap depends on the trigger: wake word needs only a short
+    # settle, push-to-talk waits out the full cue tail. The recorder stays
+    # trigger-agnostic — it just receives the chosen number.
+    pre_capture_gap_ms = (
+        settings.vad_pre_capture_gap_wakeword_ms
+        if settings.trigger_type == "wake_word"
+        else settings.vad_pre_capture_gap_enter_ms
+    )
     recorder = SoundDeviceRecorder(
         sample_rate=settings.capture_sample_rate,
         frame_size=settings.vad_frame_size,
@@ -76,6 +87,7 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
         max_recording_ms=settings.vad_max_recording_ms,
         pre_roll_ms=settings.vad_pre_roll_ms,
         min_speech_ms=settings.vad_min_speech_ms,
+        pre_capture_gap_ms=pre_capture_gap_ms,
     )
     transcriber = WhisperTranscriber(
         model_size=settings.whisper_model_size,
@@ -88,20 +100,39 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
     return ListenUseCase(recorder=recorder, transcriber=transcriber)
 
 
+def build_trigger(settings: Settings, *, input_fn: Callable[..., str] = input) -> Trigger:
+    """Select the turn trigger (Strategy) from ``trigger_type``.
+
+    ``input_fn`` is forwarded to the push-to-talk trigger (composition never
+    touches stdin itself). The wake-word model is loaded lazily, only when the
+    trigger starts listening.
+    """
+    if settings.trigger_type == "wake_word":
+        return WakeWordTrigger(
+            model_path=settings.wake_word_model_path,
+            threshold=settings.wake_word_threshold,
+            frame_size=settings.wake_word_frame_size,
+            refractory_s=settings.wake_word_refractory_s,
+            sample_rate=settings.capture_sample_rate,
+        )
+    return EnterTrigger(input_fn=input_fn)
+
+
 def build_voice_loop(
     settings: Settings,
     *,
-    wait_for_trigger: Callable[[], object],
     should_continue: Callable[[], bool],
+    input_fn: Callable[..., str] = input,
     on_state: Optional[Callable[[VoiceState], None]] = None,
     on_timing: Optional[Callable[[str, float], None]] = None,
 ) -> VoiceLoop:
-    """Wire the full push-to-talk loop (Phase 3).
+    """Wire the full voice loop (Phases 3–5).
 
     Reuses the per-capability builders, so Whisper and Piper are each loaded once
-    (warm) here, off the per-turn critical path. The loop and the turn share the
-    same ``on_state`` callback (the turn emits LISTENING/THINKING/SPEAKING; the
-    loop emits IDLE). The I/O callables come from ``main``.
+    (warm) here, off the per-turn critical path. The trigger (push-to-talk or wake
+    word) is selected from config; the loop and the turn share the same
+    ``on_state`` callback (the turn emits LISTENING/THINKING/SPEAKING; the loop
+    emits IDLE). The remaining I/O callables come from ``main``.
     """
     start_cue = None
     play_cue = None
@@ -125,9 +156,10 @@ def build_voice_loop(
         start_cue=start_cue,
         play_cue=play_cue,
     )
+    trigger = build_trigger(settings, input_fn=input_fn)
     return VoiceLoop(
         turn,
-        wait_for_trigger=wait_for_trigger,
+        wait_for_trigger=trigger.wait_for_trigger,
         should_continue=should_continue,
         on_state=on_state,
     )

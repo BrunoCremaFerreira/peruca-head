@@ -53,10 +53,12 @@ class SoundDeviceRecorder(Recorder):
         max_recording_ms: int = 15000,
         pre_roll_ms: int = 300,
         min_speech_ms: int = 250,
+        pre_capture_gap_ms: int = _PRE_CAPTURE_GAP_MS,
     ) -> None:
         self._vad = vad
         self._frame_source_factory = frame_source_factory
         self._sleep = sleep or time.sleep
+        self._pre_capture_gap_ms = pre_capture_gap_ms
         self._sample_rate = sample_rate
         self._channels = channels
         self._frame_size = frame_size
@@ -71,7 +73,7 @@ class SoundDeviceRecorder(Recorder):
     def record_until_silence(self) -> AudioBuffer:
         vad = self._loaded_vad()
         # Let the start cue's acoustic tail die before the input stream opens.
-        self._sleep(_PRE_CAPTURE_GAP_MS / 1000.0)
+        self._sleep(self._pre_capture_gap_ms / 1000.0)
         # Keep enough recent frames to recover the onset (pre-roll padding plus
         # the speech-confirmation window) when speech is finally confirmed.
         pre_roll = deque(maxlen=self._pre_roll_frames + self._min_speech_frames)

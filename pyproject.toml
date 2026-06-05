@@ -21,6 +21,9 @@ dependencies = [
     # pulls in torch (heavy; reevaluated for the Raspberry Pi port).
     "faster-whisper>=1.0",
     "silero-vad>=5.1",
+    # Wake word (Phase 5, optional). Local keyword detection; stock models are
+    # English, a pt-BR "peruca" model needs custom training (deferred).
+    "openwakeword>=0.6",
 ]
 
 [project.optional-dependencies]

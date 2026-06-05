@@ -123,12 +123,15 @@ def run_loop(settings: Settings, *, input_fn=input, output_fn=print) -> None:
 
     loop = build_voice_loop(
         settings,
-        wait_for_trigger=lambda: input_fn("press Enter and speak… "),
         should_continue=lambda: True,
+        input_fn=input_fn,
         on_state=on_state,
         on_timing=on_timing,
     )
-    output_fn("peruca-head (voice loop). Press Enter to talk; Ctrl-C to stop.")
+    if settings.trigger_type == "wake_word":
+        output_fn("peruca-head (voice loop). Listening for the wake word; Ctrl-C to stop.")
+    else:
+        output_fn("peruca-head (voice loop). Press Enter to talk; Ctrl-C to stop.")
     try:
         loop.run()
     except (EOFError, KeyboardInterrupt):

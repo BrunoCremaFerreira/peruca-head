@@ -2,11 +2,12 @@
 
 Pure orchestration — no I/O, no device or model access. It owns the IDLE state
 and the loop; the turn owns LISTENING/THINKING/SPEAKING. Triggering and the
-continue/stop decision are injected callables (a ``Trigger`` port arrives only in
-Phase 5):
+continue/stop decision are injected callables; the loop stays agnostic to the
+trigger. The composition supplies ``wait_for_trigger`` as the bound method of a
+``Trigger`` adapter (push-to-talk or wake word):
 
-- ``wait_for_trigger`` blocks until the user pushes to talk (Enter); its return
-  value is ignored.
+- ``wait_for_trigger`` blocks until the user starts a turn (Enter / wake word);
+  its return value is ignored.
 - ``should_continue`` decides whether to keep looping (so it is testable and so
   ``main`` can stop the loop).
 - ``on_state`` receives IDLE transitions for console/LED feedback.

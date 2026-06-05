@@ -62,9 +62,33 @@ class Settings(BaseSettings):
     vad_max_recording_ms: int = 15000
     vad_pre_roll_ms: int = 300
     vad_min_speech_ms: int = 250
+    # Silence before opening the input stream so the start cue's tail dies first.
+    # Wake-word mode uses a smaller gap (the wake detection already paced things);
+    # the composition root picks the value per trigger_type.
+    vad_pre_capture_gap_enter_ms: int = 100
+    vad_pre_capture_gap_wakeword_ms: int = 40
+
+    # --- Trigger / wake word (Phase 5) ---
+    # "enter" = push-to-talk (default; reliable, no model needed).
+    # "wake_word" = always-on keyword detection (needs wake_word_model_path).
+    trigger_type: str = "enter"
+    wake_word_model_path: str = ""  # openWakeWord .onnx (stock models are English)
+    wake_word_threshold: float = 0.5
+    wake_word_refractory_s: float = 2.0  # reserved; not exercised by the sequential v1
+    wake_word_frame_size: int = 1280  # openWakeWord needs 1280 (not silero's 512)
 
     @model_validator(mode="after")
     def _voice_path_required_when_tts_enabled(self) -> "Settings":
         if self.tts_enabled and not self.piper_voice_path:
             raise ValueError("piper_voice_path is required when tts_enabled is true")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_trigger(self) -> "Settings":
+        if self.trigger_type not in {"enter", "wake_word"}:
+            raise ValueError("trigger_type must be 'enter' or 'wake_word'")
+        if self.trigger_type == "wake_word" and not self.wake_word_model_path:
+            raise ValueError(
+                "wake_word_model_path is required when trigger_type is 'wake_word'"
+            )
         return self

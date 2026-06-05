@@ -54,8 +54,8 @@ def _recorder(frames, probs, **overrides):
 
 
 def test_waits_the_anti_leak_gap_before_capturing():
-    # The cue's acoustic tail must die before capture opens: a fixed pre-capture
-    # gap is slept before the first frame is read.
+    # The cue's acoustic tail must die before capture opens: a pre-capture gap is
+    # slept before the first frame is read (default 100 ms).
     slept: list = []
     frames = [_frame(1), _frame(2)]
     recorder = _recorder(
@@ -65,6 +65,22 @@ def test_waits_the_anti_leak_gap_before_capturing():
     recorder.record_until_silence()
 
     assert slept and slept[0] >= 0.1  # >= 100 ms before any capture
+
+
+def test_pre_capture_gap_is_configurable():
+    # Wake-word mode uses a smaller gap; the recorder just takes the int.
+    slept: list = []
+    frames = [_frame(1), _frame(2)]
+    recorder = _recorder(
+        frames,
+        probs=[0.0, 0.0],
+        sleep=lambda seconds: slept.append(seconds),
+        pre_capture_gap_ms=40,
+    )
+
+    recorder.record_until_silence()
+
+    assert slept[0] == 0.04
 
 
 def test_records_speech_and_stops_after_sustained_silence():

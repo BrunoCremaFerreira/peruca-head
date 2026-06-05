@@ -7,14 +7,14 @@ already exists in the sibling project [`peruca`](../peruca), which exposes a RES
 (`POST /llm/chat`). The head's only job is to close the **voice loop** around that
 API — listen, transcribe, ask Peruca, speak the answer.
 
-> **Status:** **Phases 0–4 implemented.** Phase 0 — text chat against
-> `/llm/chat`. Phase 1 — voice output (Piper). Phase 2 — voice input
-> (`peruca-head listen`: silero VAD + faster-whisper). Phase 3 — full
-> push-to-talk loop. Phase 4 — robustness & config for daily use:
-> `peruca-head run` (default command), a start-cue beep, `/health` check on
-> startup (warn-and-continue), logging, and full `.env` coverage. All fully
-> unit-tested with no network, model, or hardware. Wake word is next
-> (Phase 5, optional). See [`CLAUDE.md`](CLAUDE.md).
+> **Status:** **Phases 0–5 implemented** — the PC voice loop is feature-complete.
+> Phase 0 — text chat. Phase 1 — voice output (Piper). Phase 2 — voice input
+> (silero VAD + faster-whisper). Phase 3 — full push-to-talk loop. Phase 4 —
+> robustness & config (`peruca-head run`, start-cue beep, `/health` check,
+> logging, full `.env`). Phase 5 — wake word: a pluggable `Trigger` strategy
+> (push-to-talk by default; openWakeWord when a model is supplied). All fully
+> unit-tested with no network, model, or hardware. Only the Raspberry Pi port
+> (Phase 6) remains, and is out of current scope. See [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -132,6 +132,7 @@ Each phase is independently runnable. Current target: **Phase 5**.
 | **2 ✅** | Voice input (capture + STT) | Spoken phrase → correct text in console |
 | **3 ✅** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
 | **4 ✅** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
+| **5 ✅** | Wake word (optional) | Pluggable trigger; openWakeWord when a model is supplied |
 | **4** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **5** | Wake word (optional) | Say "peruca…" and it starts listening on its own |
 | **6** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
@@ -189,6 +190,11 @@ A short beep means "you can speak" — **speak after the beep** (audio captured
 during the cue is not recorded). On startup the head probes the brain's
 `/health`; if it's down it warns and starts anyway (the first turn will speak the
 error). Set `AUDIO_CUES_ENABLED=false` to silence the beep.
+
+To replace push-to-talk with an always-on wake word (Phase 5, optional), set
+`TRIGGER_TYPE=wake_word` and `WAKE_WORD_MODEL_PATH=/path/to/model.onnx`. Stock
+openWakeWord models are English (e.g. `hey_jarvis`) — recognizing "peruca"
+requires a custom-trained pt-BR model, which is why push-to-talk is the default.
 
 **Test** — fast, no network/model/hardware:
 
