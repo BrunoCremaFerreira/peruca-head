@@ -7,12 +7,13 @@ already exists in the sibling project [`peruca`](../peruca), which exposes a RES
 (`POST /llm/chat`). The head's only job is to close the **voice loop** around that
 API — listen, transcribe, ask Peruca, speak the answer.
 
-> **Status:** **Phases 0, 1 and 2 implemented.** Phase 0 — text chat against
-> `/llm/chat`. Phase 1 — voice output: replies spoken in pt-BR via Piper.
-> Phase 2 — voice input: `peruca-head listen` records a phrase (silero VAD,
-> record-until-silence) and prints the pt-BR transcript (faster-whisper). All
-> fully unit-tested with no network, model, or hardware. The full push-to-talk
-> loop is next (Phase 3). See [`CLAUDE.md`](CLAUDE.md) for the full build plan.
+> **Status:** **Phases 0–3 implemented.** Phase 0 — text chat against
+> `/llm/chat`. Phase 1 — voice output (Piper). Phase 2 — voice input
+> (`peruca-head listen`: silero VAD + faster-whisper). Phase 3 — full
+> push-to-talk loop (`peruca-head loop`): Enter → record → STT → peruca → TTS →
+> speak → repeat, with console state/timing feedback and spoken pt-BR error
+> handling. All fully unit-tested with no network, model, or hardware.
+> Robustness & config polish is next (Phase 4). See [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -121,14 +122,14 @@ Consultation order for ML/audio features:
 
 ## Build plan
 
-Each phase is independently runnable. Current target: **Phase 3**.
+Each phase is independently runnable. Current target: **Phase 4**.
 
 | Phase | Goal | Done when |
 |---|---|---|
 | **0 ✅** | Skeleton + brain client | Text chat in the terminal (type → Peruca reply), no audio |
 | **1 ✅** | Voice output (TTS) | Typed text is spoken in pt-BR |
 | **2 ✅** | Voice input (capture + STT) | Spoken phrase → correct text in console |
-| **3** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
+| **3 ✅** | Full loop (push-to-talk) | End-to-end voice conversation, triggered by a key |
 | **4** | Robustness & config | Comfortable daily PC use; `.env`-driven; `/health` check |
 | **5** | Wake word (optional) | Say "peruca…" and it starts listening on its own |
 | **6** | Hardware port (out of scope for now) | Runs on a Raspberry Pi with mic, speaker, LED |
@@ -173,6 +174,13 @@ peruca-head listen        # speak; Ctrl-C to stop
 
 The first run downloads the faster-whisper model named by `WHISPER_MODEL_SIZE`
 (`small` by default). silero-vad pulls in PyTorch.
+
+To run the full voice conversation (Phase 3) — needs TTS configured (the loop and
+its error messages are spoken):
+
+```bash
+peruca-head loop          # Enter → speak → hear the reply → repeat; Ctrl-C to stop
+```
 
 **Test** — fast, no network/model/hardware:
 

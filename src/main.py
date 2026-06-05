@@ -15,8 +15,10 @@ from composition import (
     build_listen_use_case,
     build_speak_text_use_case,
     build_text_turn_use_case,
+    build_voice_loop,
 )
 from config import Settings
+from domain.models.voice_state import VoiceState
 from domain.ports.brain_client import BrainUnavailableError
 
 _EXIT_COMMANDS = {"exit", "quit", "sair"}
@@ -77,10 +79,47 @@ def run_listen(
             output_fn(f"you said> {transcript.text}")
 
 
+def run_loop(settings: Settings, *, input_fn=input, output_fn=print) -> None:
+    """Phase 3 deliverable: full push-to-talk voice conversation.
+
+    Press Enter, speak, hear peruca's reply, repeat. Console shows the loop state
+    and per-stage timings (brain latency isolated). Ctrl-C / EOF ends the loop.
+    """
+    if not settings.tts_enabled or not settings.piper_voice_path:
+        output_fn(
+            "The voice loop needs TTS configured (replies and errors are spoken). "
+            "Set TTS_ENABLED=true and PIPER_VOICE_PATH in .env."
+        )
+        return
+
+    def on_state(state: VoiceState) -> None:
+        output_fn(f"[{state.name.lower()}]")
+
+    def on_timing(label: str, seconds: float) -> None:
+        output_fn(f"  · {label}: {seconds:.2f}s")
+
+    loop = build_voice_loop(
+        settings,
+        wait_for_trigger=lambda: input_fn("press Enter and speak… "),
+        should_continue=lambda: True,
+        on_state=on_state,
+        on_timing=on_timing,
+    )
+    output_fn("peruca-head (voice loop). Press Enter to talk; Ctrl-C to stop.")
+    try:
+        loop.run()
+    except (EOFError, KeyboardInterrupt):
+        output_fn("\nbye")
+
+
 def main() -> None:
     settings = Settings()
-    if sys.argv[1:2] == ["listen"]:
+    mode = sys.argv[1:2]
+    if mode == ["listen"]:
         run_listen(build_listen_use_case(settings))
+        return
+    if mode == ["loop"]:
+        run_loop(settings)
         return
     text_turn = build_text_turn_use_case(settings)
     speak = build_speak_text_use_case(settings) if settings.tts_enabled else None

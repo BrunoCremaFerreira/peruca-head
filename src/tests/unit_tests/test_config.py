@@ -23,3 +23,13 @@ def test_tts_enabled_with_voice_path_is_valid():
 def test_tts_disabled_does_not_require_a_voice_path():
     settings = Settings(_env_file=None, tts_enabled=False, piper_voice_path="")
     assert settings.tts_enabled is False
+
+
+def test_request_timeout_default_is_voice_friendly():
+    # Phase 3: 30s is too long to wait on a voice interaction; default is 10s.
+    assert Settings(_env_file=None).request_timeout_seconds == 10.0
+
+
+def test_has_a_ptbr_brain_error_phrase():
+    phrase = Settings(_env_file=None).error_speech_pt_br
+    assert isinstance(phrase, str) and phrase.strip() != ""

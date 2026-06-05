@@ -22,7 +22,13 @@ class Settings(BaseSettings):
     peruca_api_url: str = "http://localhost:8000"
     external_user_id: str = "peruca-head-device"
     chat_id: str = "peruca-head-session"
-    request_timeout_seconds: float = 30.0
+    # Voice interactions should not wait ~30s on a stuck brain; ~10s is the
+    # tolerance before "this is stuck". Revisit against peruca /llm/chat p95.
+    request_timeout_seconds: float = 10.0
+
+    # Spoken (pt-BR) when the brain is unreachable, so a screenless device still
+    # signals the failure instead of going silent.
+    error_speech_pt_br: str = "Não consegui falar com o cérebro agora."
 
     # Voice output (TTS). Disabled by default so the text chat runs without a
     # Piper voice on disk; enable once the .onnx voice is in place.

@@ -7,11 +7,16 @@ adapter is a change confined to this module.
 
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from application.use_cases.listen import ListenUseCase
 from application.use_cases.speak_text import SpeakTextUseCase
 from application.use_cases.text_turn import TextTurnUseCase
+from application.use_cases.voice_turn import VoiceTurnUseCase
+from application.voice_loop import VoiceLoop
 from config import Settings
 from domain.models.conversation import ConversationSession
+from domain.models.voice_state import VoiceState
 from infra.audio.sounddevice_player import SoundDevicePlayer
 from infra.audio.sounddevice_recorder import SoundDeviceRecorder
 from infra.brain.http_peruca_client import HttpPerucaClient
@@ -70,3 +75,34 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
     )
     transcriber.warm_up()
     return ListenUseCase(recorder=recorder, transcriber=transcriber)
+
+
+def build_voice_loop(
+    settings: Settings,
+    *,
+    wait_for_trigger: Callable[[], object],
+    should_continue: Callable[[], bool],
+    on_state: Optional[Callable[[VoiceState], None]] = None,
+    on_timing: Optional[Callable[[str, float], None]] = None,
+) -> VoiceLoop:
+    """Wire the full push-to-talk loop (Phase 3).
+
+    Reuses the per-capability builders, so Whisper and Piper are each loaded once
+    (warm) here, off the per-turn critical path. The loop and the turn share the
+    same ``on_state`` callback (the turn emits LISTENING/THINKING/SPEAKING; the
+    loop emits IDLE). The I/O callables come from ``main``.
+    """
+    turn = VoiceTurnUseCase(
+        listen=build_listen_use_case(settings),
+        text_turn=build_text_turn_use_case(settings),
+        speak=build_speak_text_use_case(settings),
+        error_phrase=settings.error_speech_pt_br,
+        on_state=on_state,
+        on_timing=on_timing,
+    )
+    return VoiceLoop(
+        turn,
+        wait_for_trigger=wait_for_trigger,
+        should_continue=should_continue,
+        on_state=on_state,
+    )

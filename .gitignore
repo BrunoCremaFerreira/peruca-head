@@ -17,3 +17,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Editor / IDE
+.vscode/
+.idea/
