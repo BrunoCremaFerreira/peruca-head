@@ -7,6 +7,7 @@ model (WakeWordTrigger lazy-loads openWakeWord only when it listens).
 from composition import build_trigger
 from config import Settings
 from infra.trigger.enter_trigger import EnterTrigger
+from infra.trigger.vosk_trigger import VoskTrigger
 from infra.trigger.wakeword_trigger import WakeWordTrigger
 
 
@@ -21,3 +22,13 @@ def test_builds_wake_word_trigger_when_configured():
     )
     trigger = build_trigger(settings, input_fn=lambda *_a: "")
     assert isinstance(trigger, WakeWordTrigger)
+
+
+def test_builds_vosk_trigger_when_configured():
+    settings = Settings(
+        _env_file=None,
+        trigger_type="vosk",
+        vosk_model_path="/models/vosk-model-small-pt-0.3",
+    )
+    trigger = build_trigger(settings, input_fn=lambda *_a: "")
+    assert isinstance(trigger, VoskTrigger)

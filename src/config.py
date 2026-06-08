@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     wake_word_threshold: float = 0.5
     wake_word_refractory_s: float = 2.0  # reserved; not exercised by the sequential v1
     wake_word_frame_size: int = 1280  # openWakeWord needs 1280 (not silero's 512)
+    # Vosk keyword trigger (pt-BR, no model training required).
+    # vosk_model_path must point to the extracted model directory (not a zip).
+    vosk_model_path: str = ""
+    vosk_frame_size: int = 4000  # 250 ms @ 16 kHz (Vosk range: 2000–8000)
+    vosk_keyword: str = "peruca"
 
     @model_validator(mode="after")
     def _voice_path_required_when_tts_enabled(self) -> "Settings":
@@ -85,10 +90,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_trigger(self) -> "Settings":
-        if self.trigger_type not in {"enter", "wake_word"}:
-            raise ValueError("trigger_type must be 'enter' or 'wake_word'")
+        if self.trigger_type not in {"enter", "wake_word", "vosk"}:
+            raise ValueError("trigger_type must be 'enter', 'wake_word', or 'vosk'")
         if self.trigger_type == "wake_word" and not self.wake_word_model_path:
             raise ValueError(
                 "wake_word_model_path is required when trigger_type is 'wake_word'"
+            )
+        if self.trigger_type == "vosk" and not self.vosk_model_path:
+            raise ValueError(
+                "vosk_model_path is required when trigger_type is 'vosk'"
             )
         return self

@@ -71,3 +71,17 @@ def test_wake_word_with_model_path_is_valid():
 def test_rejects_unknown_trigger_type():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, trigger_type="telepathy")
+
+
+def test_vosk_requires_model_path():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, trigger_type="vosk", vosk_model_path="")
+
+
+def test_vosk_with_model_path_is_valid():
+    settings = Settings(
+        _env_file=None, trigger_type="vosk", vosk_model_path="/models/vosk-model-small-pt-0.3"
+    )
+    assert settings.trigger_type == "vosk"
+    assert settings.vosk_keyword == "peruca"
+    assert settings.vosk_frame_size == 4000

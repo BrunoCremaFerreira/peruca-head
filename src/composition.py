@@ -25,6 +25,7 @@ from infra.audio.sounddevice_recorder import SoundDeviceRecorder
 from infra.brain.http_peruca_client import HttpPerucaClient
 from infra.stt.whisper_transcriber import WhisperTranscriber
 from infra.trigger.enter_trigger import EnterTrigger
+from infra.trigger.vosk_trigger import VoskTrigger
 from infra.trigger.wakeword_trigger import WakeWordTrigger
 from infra.tts.piper_speaker import PiperSpeaker
 
@@ -76,7 +77,7 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
     # trigger-agnostic — it just receives the chosen number.
     pre_capture_gap_ms = (
         settings.vad_pre_capture_gap_wakeword_ms
-        if settings.trigger_type == "wake_word"
+        if settings.trigger_type in {"wake_word", "vosk"}
         else settings.vad_pre_capture_gap_enter_ms
     )
     recorder = SoundDeviceRecorder(
@@ -113,6 +114,13 @@ def build_trigger(settings: Settings, *, input_fn: Callable[..., str] = input) -
             threshold=settings.wake_word_threshold,
             frame_size=settings.wake_word_frame_size,
             refractory_s=settings.wake_word_refractory_s,
+            sample_rate=settings.capture_sample_rate,
+        )
+    if settings.trigger_type == "vosk":
+        return VoskTrigger(
+            model_path=settings.vosk_model_path,
+            keyword=settings.vosk_keyword,
+            frame_size=settings.vosk_frame_size,
             sample_rate=settings.capture_sample_rate,
         )
     return EnterTrigger(input_fn=input_fn)

@@ -24,6 +24,9 @@ dependencies = [
     # Wake word (Phase 5, optional). Local keyword detection; stock models are
     # English, a pt-BR "peruca" model needs custom training (deferred).
     "openwakeword>=0.6",
+    # Vosk keyword trigger (Phase 5 alt). pt-BR grammar-restricted ASR; no model
+    # training required for common words. Model must be downloaded manually.
+    "vosk>=0.3.45",
 ]
 
 [project.optional-dependencies]
