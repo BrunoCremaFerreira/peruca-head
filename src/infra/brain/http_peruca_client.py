@@ -61,7 +61,12 @@ class HttpPerucaClient(BrainClient, BrainHealthCheck):
                 f"Failed to reach the brain at {self._base_url}{_CHAT_PATH}: {exc}"
             ) from exc
 
-        return Reply(text=data.get("response", ""))
+        raw = data.get("response", "")
+        # peruca's routes.py sometimes sets response={"output": str} instead of a
+        # plain string when the LangGraph result is a dict. Unwrap it here so
+        # Reply.text is always str and application code never sees a dict.
+        text = raw.get("output", "") if isinstance(raw, dict) else raw
+        return Reply(text=text)
 
     def check_health(self) -> bool:
         """Probe GET /health with a short timeout; never raises."""

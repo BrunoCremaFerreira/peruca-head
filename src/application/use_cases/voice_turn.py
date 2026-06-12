@@ -72,7 +72,7 @@ class VoiceTurnUseCase:
             return TurnOutcome.BRAIN_ERROR
 
         self._on_state(VoiceState.SPEAKING)
-        self._timed("speak", lambda: self._speak.run(reply.text.get("output", "")))
+        self._timed("speak", lambda: self._speak.run(reply.text))
         return TurnOutcome.SUCCESS
 
     def _timed(self, label: str, action: Callable[[], object]) -> object:

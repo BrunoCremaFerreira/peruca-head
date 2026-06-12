@@ -49,6 +49,27 @@ def test_posts_contract_payload_and_returns_reply(session):
 
 
 @respx.mock
+def test_extracts_text_from_dict_response(session):
+    # The peruca routes.py sometimes sets ChatResponse.response = {"output": str}
+    # instead of a plain string. The adapter must unwrap it so Reply.text is always str.
+    respx.post(f"{BASE_URL}/llm/chat").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "response": {"output": "olá via dict"},
+                "external_user_id": "user-1",
+                "chat_id": "chat-1",
+            },
+        )
+    )
+    client = HttpPerucaClient(base_url=BASE_URL)
+
+    reply = client.ask("oi", session)
+
+    assert reply.text == "olá via dict"
+
+
+@respx.mock
 def test_trailing_slash_in_base_url_does_not_duplicate_path(session):
     route = respx.post(f"{BASE_URL}/llm/chat").mock(
         return_value=httpx.Response(200, json={"response": "ok"})

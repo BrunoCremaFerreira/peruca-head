@@ -25,8 +25,10 @@ def test_tts_disabled_does_not_require_a_voice_path():
     assert settings.tts_enabled is False
 
 
-def test_request_timeout_default_is_voice_friendly():
+def test_request_timeout_default_is_voice_friendly(monkeypatch):
     # Phase 3: 30s is too long to wait on a voice interaction; default is 10s.
+    # monkeypatch removes the env var so IDEs that auto-export .env don't interfere.
+    monkeypatch.delenv("REQUEST_TIMEOUT_SECONDS", raising=False)
     assert Settings(_env_file=None).request_timeout_seconds == 10.0
 
 
