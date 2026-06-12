@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     vosk_frame_size: int = 4000  # 250 ms @ 16 kHz (Vosk range: 2000–8000)
     vosk_keyword: str = "peruca"
 
+    # --- STT mode (Phase 6 remote option) ---
+    # "local"  = faster-whisper running on this machine (default).
+    # "remote" = send audio to a whisper-asr-webservice instance (e.g. on a server).
+    stt_mode: str = "local"
+    remote_stt_url: str = ""
+    remote_stt_timeout_seconds: float = 8.0
+
     @model_validator(mode="after")
     def _voice_path_required_when_tts_enabled(self) -> "Settings":
         if self.tts_enabled and not self.piper_voice_path:
@@ -100,4 +107,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "vosk_model_path is required when trigger_type is 'vosk'"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_stt_mode(self) -> "Settings":
+        if self.stt_mode not in {"local", "remote"}:
+            raise ValueError("stt_mode must be 'local' or 'remote'")
+        if self.stt_mode == "remote" and not self.remote_stt_url:
+            raise ValueError("remote_stt_url is required when stt_mode is 'remote'")
         return self

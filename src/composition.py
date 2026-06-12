@@ -23,6 +23,7 @@ from infra.audio.cue_factory import build_start_cue
 from infra.audio.sounddevice_player import SoundDevicePlayer
 from infra.audio.sounddevice_recorder import SoundDeviceRecorder
 from infra.brain.http_peruca_client import HttpPerucaClient
+from infra.stt.remote_whisper_transcriber import RemoteWhisperTranscriber
 from infra.stt.whisper_transcriber import WhisperTranscriber
 from infra.trigger.enter_trigger import EnterTrigger
 from infra.trigger.vosk_trigger import VoskTrigger
@@ -90,13 +91,20 @@ def build_listen_use_case(settings: Settings) -> ListenUseCase:
         min_speech_ms=settings.vad_min_speech_ms,
         pre_capture_gap_ms=pre_capture_gap_ms,
     )
-    transcriber = WhisperTranscriber(
-        model_size=settings.whisper_model_size,
-        device=settings.whisper_device,
-        compute_type=settings.whisper_compute_type,
-        language=settings.stt_language,
-        beam_size=settings.whisper_beam_size,
-    )
+    if settings.stt_mode == "remote":
+        transcriber = RemoteWhisperTranscriber(
+            base_url=settings.remote_stt_url,
+            language=settings.stt_language,
+            timeout_seconds=settings.remote_stt_timeout_seconds,
+        )
+    else:
+        transcriber = WhisperTranscriber(
+            model_size=settings.whisper_model_size,
+            device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type,
+            language=settings.stt_language,
+            beam_size=settings.whisper_beam_size,
+        )
     transcriber.warm_up()
     return ListenUseCase(recorder=recorder, transcriber=transcriber)
 

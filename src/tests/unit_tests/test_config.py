@@ -85,3 +85,30 @@ def test_vosk_with_model_path_is_valid():
     assert settings.trigger_type == "vosk"
     assert settings.vosk_keyword == "peruca"
     assert settings.vosk_frame_size == 4000
+
+
+def test_stt_defaults_to_local_mode():
+    assert Settings(_env_file=None).stt_mode == "local"
+
+
+def test_remote_stt_requires_url():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, stt_mode="remote", remote_stt_url="")
+
+
+def test_remote_stt_with_url_is_valid():
+    settings = Settings(
+        _env_file=None, stt_mode="remote", remote_stt_url="http://192.168.1.100:9000"
+    )
+    assert settings.stt_mode == "remote"
+    assert settings.remote_stt_url == "http://192.168.1.100:9000"
+
+
+def test_local_stt_does_not_require_url():
+    settings = Settings(_env_file=None, stt_mode="local", remote_stt_url="")
+    assert settings.stt_mode == "local"
+
+
+def test_unknown_stt_mode_is_rejected():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, stt_mode="cloud")
